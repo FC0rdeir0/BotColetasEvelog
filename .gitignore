@@ -1,0 +1,21 @@
+# Ambiente virtual
+.venv/
+
+# Credenciais e bases locais
+dados/login.xlsx
+dados/base_cnpjs.xlsx
+dados/emails_unidades.xlsx
+
+# Resultados gerados
+resultados/*.xlsx
+
+# Perfil e sessao do navegador
+perfil_jadlog/
+perfil_jadlog_teste/
+
+# Python
+__pycache__/
+*.pyc
+
+# Streamlit
+.streamlit/secrets.toml
