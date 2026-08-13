@@ -16,9 +16,7 @@ from automacao import (
 
 PASTA_PROJETO = Path(__file__).resolve().parent
 
-
 st.set_page_config(
-    page_title="Bot Coletas Jadlog",
     layout="wide",
 )
 
