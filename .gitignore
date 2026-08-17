@@ -5,7 +5,8 @@
 dados/login.xlsx
 
 # Resultados gerados
-resultados/*.xlsx
+resultados/*
+!resultados/.gitkeep
 
 # Perfil e sessao do navegador
 perfil_jadlog/
