@@ -144,7 +144,7 @@ if executar:
 
             resultado = executar_automacao(
                 execucoes=execucoes,
-                headless=not True,
+                headless=True,
                 modo_teste=False,
                 continuar_em_erro=True,
                 log=registrar,
