@@ -3,8 +3,6 @@
 
 # Credenciais e bases locais
 dados/login.xlsx
-dados/base_cnpjs.xlsx
-dados/emails_unidades.xlsx
 
 # Resultados gerados
 resultados/*.xlsx
