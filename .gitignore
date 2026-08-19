@@ -1,9 +1,6 @@
 # Ambiente virtual
 .venv/
 
-# Credenciais e bases locais
-dados/login.xlsx
-
 # Resultados gerados
 resultados/*
 !resultados/.gitkeep

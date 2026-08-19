@@ -1,11 +1,13 @@
+import os
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
 from automacao import (
     ARQUIVO_BASE_CNPJS,
-    ARQUIVO_LOGIN,
+    ARQUIVO_ENV,
     ARQUIVO_EMAILS,
     executar_automacao,
     preparar_execucoes,
@@ -15,6 +17,15 @@ from automacao import (
 
 
 PASTA_PROJETO = Path(__file__).resolve().parent
+
+load_dotenv(PASTA_PROJETO / ".env")
+
+HEADLESS = (
+    os.getenv("HEADLESS", "True")
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "sim", "on"}
+)
 
 st.set_page_config(
     layout="wide",
@@ -32,19 +43,22 @@ with col_1:
 
     erros_fixos = validar_arquivos_fixos()
 
-    if not ARQUIVO_LOGIN.exists():
-        st.error("dados/login.xlsx não encontrado")
+    if not ARQUIVO_ENV.exists():
+        st.error(".env não encontrado")
 
     if not ARQUIVO_BASE_CNPJS.exists():
-        st.error("dados/base_cnpjs.xlsx não encontrado")
-        
+        st.error("dados/base_cnpjs.json não encontrado")
+
     if not ARQUIVO_EMAILS.exists():
-        st.error("emails_unidades.xlsx não encontrado")
+        st.error("dados/emails_unidades.json não encontrado")
 
 if erros_fixos:
-    st.warning(
-        "Corrija os arquivos da pasta dados antes de executar a automação."
-    )
+    col_2, _ = st.columns([1, 2])
+
+    with col_2:
+        st.warning(
+            "Corrija os arquivos de configuração antes de executar a automação."
+        )
     with st.expander("Ver problemas encontrados"):
         for erro in erros_fixos:
             st.write(f"• {erro}")
@@ -144,7 +158,7 @@ if executar:
 
             resultado = executar_automacao(
                 execucoes=execucoes,
-                headless=True,
+                headless=HEADLESS,
                 modo_teste=False,
                 continuar_em_erro=True,
                 log=registrar,

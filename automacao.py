@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 import pandas as pd
+from dotenv import load_dotenv
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -22,11 +25,13 @@ PASTA_DADOS = PASTA_PROJETO / "dados"
 PASTA_RESULTADOS = PASTA_PROJETO / "resultados"
 PASTA_PERFIL = PASTA_PROJETO / "perfil_jadlog"
 
-ARQUIVO_LOGIN = PASTA_DADOS / "login.xlsx"
-ARQUIVO_BASE_CNPJS = PASTA_DADOS / "base_cnpjs.xlsx"
-ARQUIVO_EMAILS = Path("dados/emails_unidades.xlsx")
+ARQUIVO_ENV = PASTA_PROJETO / ".env"
+ARQUIVO_BASE_CNPJS = PASTA_DADOS / "base_cnpjs.json"
+ARQUIVO_EMAILS = PASTA_DADOS / "emails_unidades.json"
 
-URL = "https://www.jadlog.com.br/FractionWeb/pages/static/home.jad"
+load_dotenv(ARQUIVO_ENV)
+
+URL = os.getenv("URL_FRACTION", "").strip()
 TIMEOUT = 30_000
 
 MAX_TENTATIVAS = 3
@@ -45,58 +50,50 @@ SERIE = "0"
 VALOR_NOTA = "100,00"
 MODALIDADE = "CORPORATE"
 
-def carregar_emails_unidades():
+def carregar_emails_unidades() -> dict[str, str]:
     if not ARQUIVO_EMAILS.exists():
         raise FileNotFoundError(
             f"Base de e-mails não encontrada: {ARQUIVO_EMAILS}"
         )
 
-    df = pd.read_excel(
-        ARQUIVO_EMAILS,
-        dtype=str,
-    )
+    with ARQUIVO_EMAILS.open(
+        "r",
+        encoding="utf-8",
+    ) as arquivo:
+        dados = json.load(arquivo)
 
-    df.columns = [
-        str(coluna).strip()
-        for coluna in df.columns
-    ]
-
-    colunas_obrigatorias = {
-        "Unidade",
-        "Email",
-    }
-
-    faltantes = (
-        colunas_obrigatorias
-        - set(df.columns)
-    )
-
-    if faltantes:
+    if not isinstance(dados, dict):
         raise ValueError(
-            "A base emails_unidades.xlsx precisa possuir "
-            "as colunas 'Unidade' e 'Email'."
+            "emails_unidades.json deve possuir o formato "
+            '{"UNIDADE": ["email@dominio.com.br"]}.'
         )
 
-    df["Unidade"] = (
-        df["Unidade"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
+    emails: dict[str, str] = {}
 
-    df["Email"] = (
-        df["Email"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
+    for unidade, valores in dados.items():
+        unidade = texto_limpo(unidade)
 
-    return dict(
-        zip(
-            df["Unidade"],
-            df["Email"],
-        )
-    )
+        if not unidade:
+            continue
+
+        if isinstance(valores, list):
+            lista_emails = [
+                texto_limpo(email)
+                for email in valores
+                if texto_limpo(email)
+            ]
+        elif isinstance(valores, str):
+            lista_emails = [
+                texto_limpo(valores)
+            ] if texto_limpo(valores) else []
+        else:
+            raise ValueError(
+                f"Formato de e-mail inválido para a unidade {unidade}."
+            )
+
+        emails[unidade] = "; ".join(lista_emails)
+
+    return emails
 
 def criar_planilha_erros(
     detalhes: list[dict],
@@ -277,77 +274,55 @@ def ler_excel_normalizado(caminho_ou_arquivo) -> pd.DataFrame:
 def validar_arquivos_fixos() -> list[str]:
     erros: list[str] = []
 
-    if not ARQUIVO_LOGIN.exists():
+    if not ARQUIVO_ENV.exists():
         erros.append(
-            "Crie dados/login.xlsx com as colunas USER e PASSWORD."
+            "Crie o arquivo .env na raiz do projeto."
         )
     else:
-        try:
-            df_login = ler_excel_normalizado(ARQUIVO_LOGIN)
+        usuario = os.getenv("FRACTION_USER", "").strip()
+        senha = os.getenv("FRACTION_PASSWORD", "").strip()
+        url_fraction = os.getenv("URL_FRACTION", "").strip()
 
-            faltantes = {
-                "USER",
-                "PASSWORD",
-            } - set(df_login.columns)
-
-            if faltantes:
-                erros.append(
-                    "login.xlsx não possui as colunas: "
-                    + ", ".join(sorted(faltantes))
-                )
-            elif df_login.empty:
-                erros.append("login.xlsx não possui dados.")
-            else:
-                if not texto_limpo(df_login.loc[0, "USER"]):
-                    erros.append(
-                        "A primeira linha da coluna USER está vazia."
-                    )
-
-                if not texto_limpo(df_login.loc[0, "PASSWORD"]):
-                    erros.append(
-                        "A primeira linha da coluna PASSWORD está vazia."
-                    )
-
-        except Exception as erro:
+        if not usuario:
             erros.append(
-                f"Não foi possível ler login.xlsx: {erro}"
+                "FRACTION_USER não foi informado no .env."
+            )
+
+        if not senha:
+            erros.append(
+                "FRACTION_PASSWORD não foi informado no .env."
+            )
+
+        if not url_fraction:
+            erros.append(
+                "URL_FRACTION não foi informada no .env."
             )
 
     if not ARQUIVO_BASE_CNPJS.exists():
         erros.append(
-            "Crie dados/base_cnpjs.xlsx com as colunas "
-            "SIGLA, CNPJ e NOME DO CLIENTE."
+            "Crie dados/base_cnpjs.json."
         )
     else:
         try:
-            df_cnpjs = ler_excel_normalizado(
-                ARQUIVO_BASE_CNPJS
-            )
-
-            faltantes = {
-                "SIGLA",
-                "CNPJ",
-                "NOME DO CLIENTE",
-            } - set(df_cnpjs.columns)
-
-            if faltantes:
-                erros.append(
-                    "base_cnpjs.xlsx não possui as colunas: "
-                    + ", ".join(sorted(faltantes))
-                )
-
-            if df_cnpjs.empty:
-                erros.append(
-                    "base_cnpjs.xlsx não possui registros."
-                )
-
+            carregar_base_cnpjs()
         except Exception as erro:
             erros.append(
-                f"Não foi possível ler base_cnpjs.xlsx: {erro}"
+                f"Não foi possível ler base_cnpjs.json: {erro}"
+            )
+
+    if not ARQUIVO_EMAILS.exists():
+        erros.append(
+            "Crie dados/emails_unidades.json."
+        )
+    else:
+        try:
+            carregar_emails_unidades()
+        except Exception as erro:
+            erros.append(
+                f"Não foi possível ler emails_unidades.json: {erro}"
             )
 
     return erros
-
 
 def validar_planilha_pedidos(df_original: pd.DataFrame) -> list[str]:
     erros: list[str] = []
@@ -408,23 +383,42 @@ def validar_planilha_pedidos(df_original: pd.DataFrame) -> list[str]:
 
 
 def carregar_login() -> tuple[str, str]:
-    df = ler_excel_normalizado(ARQUIVO_LOGIN)
+    usuario = os.getenv(
+        "FRACTION_USER",
+        "",
+    ).strip()
 
-    usuario = texto_limpo(df.loc[0, "USER"])
-    senha = texto_limpo(df.loc[0, "PASSWORD"])
+    senha = os.getenv(
+        "FRACTION_PASSWORD",
+        "",
+    ).strip()
 
     return usuario, senha
 
 
-def carregar_base_cnpjs() -> dict[str, dict[str, str]]:
-    df = ler_excel_normalizado(ARQUIVO_BASE_CNPJS)
+def carregar_base_cnpjs() -> dict[str, str]:
+    if not ARQUIVO_BASE_CNPJS.exists():
+        raise FileNotFoundError(
+            f"Arquivo não encontrado: {ARQUIVO_BASE_CNPJS}"
+        )
 
-    base: dict[str, dict[str, str]] = {}
+    with ARQUIVO_BASE_CNPJS.open(
+        "r",
+        encoding="utf-8",
+    ) as arquivo:
+        dados = json.load(arquivo)
 
-    for _, linha in df.iterrows():
-        sigla = normalizar_sigla(linha["SIGLA"])
-        cnpj = somente_digitos(linha["CNPJ"])
-        cliente = texto_limpo(linha["NOME DO CLIENTE"])
+    if not isinstance(dados, dict):
+        raise ValueError(
+            "base_cnpjs.json deve possuir o formato "
+            '{"SIGLA": "CNPJ"}.'
+        )
+
+    base: dict[str, str] = {}
+
+    for sigla, cnpj in dados.items():
+        sigla = normalizar_sigla(sigla)
+        cnpj = somente_digitos(cnpj)
 
         if not sigla:
             continue
@@ -437,16 +431,12 @@ def carregar_base_cnpjs() -> dict[str, dict[str, str]]:
         if sigla in base:
             raise ValueError(
                 f"A sigla {sigla} aparece mais de uma vez "
-                "em base_cnpjs.xlsx."
+                "em base_cnpjs.json."
             )
 
-        base[sigla] = {
-            "cnpj": cnpj,
-            "cliente": cliente,
-        }
+        base[sigla] = cnpj
 
     return base
-
 
 def preparar_execucoes(
     df_original: pd.DataFrame,
@@ -470,12 +460,12 @@ def preparar_execucoes(
             float(texto_limpo(linha["NUMERO DE ORDENS"]))
         )
 
-        cadastro = base_cnpjs.get(sigla)
+        cnpj = base_cnpjs.get(sigla)
 
-        if cadastro is None:
+        if cnpj is None:
             alertas.append(
                 f"Linha {indice + 2}: sigla {sigla} não encontrada "
-                "em base_cnpjs.xlsx."
+                "em base_cnpjs.json."
             )
             continue
 
@@ -485,8 +475,7 @@ def preparar_execucoes(
                     "sigla": sigla,
                     "sequencia": sequencia,
                     "total_sigla": quantidade,
-                    "cnpj_remetente": cadastro["cnpj"],
-                    "nome_cliente": cadastro["cliente"],
+                    "cnpj_remetente": cnpj,
                 }
             )
 
